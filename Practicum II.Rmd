@@ -1,0 +1,1235 @@
+---
+title: "Practicum II"
+author: "Kanishka Parganiha"
+date: "11/23/2020"
+output: html_document
+---
+---
+title: "Final Practicum II"
+author: "Kanishka Parganiha"
+date: "11/16/2020"
+output: html_document
+--- 
+
+**2**
+**Importing Data**
+
+**create a data model in the form of an ERD in Crow's Foot notation using a tool of your choice (e.g., LucidChart, TOAD, MySQL Workbench, etc.) and embed an image of the model in your notebook. Your ERD should be a normalized model and not a direct representation of the data in the files. Later, when you load the data you will map the data from the files to the columns in the tables.**
+
+![ERD Diagram Design in MySql WorkBench](https://drive.google.com/uc?export=view&id=1XdBDp8crycgzYW_TvOW7AlnM2Wql1fH4)
+
+```{r cars}
+#install.packages('aws.s3')
+#devtools::install_github("cloudyr/aws.s3", ref="c71daa6ba3fa38df965550b7fcb251e6492c1b64")
+library(aws.s3)
+
+```
+
+```{r}
+
+Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAJLIPE6ZUYDK4YGRQ",
+"AWS_SECRET_ACCESS_KEY" = "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",
+"AWS_DEFAULT_REGION" = "us-east-1")
+library(aws.s3)
+
+```
+
+
+
+![Getting up AWS for Processing whole dataset](https://drive.google.com/uc?export=view&id=1Uy4rKHn6_nLXr8BDR-mH7cID8YoFbKlI)
+![S3 buckets for storing datasets](https://drive.google.com/uc?export=view&id=1ZCBqQDKRSRprLtNa7sUYaiNs6DwuiU-1)
+**title.principals**
+```{r}
+library(tidyr)
+title.principals<-read.csv(text = rawToChar(aws.s3::get_object(object ="s3://parganiha.k.imdb/title.principals.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.principals<- title.principals %>% drop_na()
+head(title.principals[,c(1,2,3,4)])
+```
+
+
+**name.basics**
+```{r}
+#library(tidyr)
+name.basics<-read.csv(text = rawToChar(aws.s3::get_object(object = "s3://parganiha.k.imdb/name.basics.tsv/data.tsv")),sep='\t',na = c("\\N"))
+name.basics<- name.basics %>% drop_na()
+head(name.basics)
+```
+
+
+**title.akas**
+```{r}
+title.akas<-read.csv(text = rawToChar(aws.s3::get_object(object = "s3://parganiha.k.imdb/title.akas.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.akas<- title.akas %>% drop_na()
+head(title.akas)
+
+
+```
+
+
+**title.basics**
+```{r}
+title.basics<-read.csv(text = rawToChar(aws.s3::get_object(object=  "s3://parganiha.k.imdb/title.basics.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.basics<- title.basics %>% drop_na()
+head(title.basics)
+```
+
+**title.crew**
+```{r}
+title.crew<-read.csv(text = rawToChar(aws.s3::get_object(object = "s3://parganiha.k.imdb/title.crew.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.crew<- title.crew %>% drop_na()
+head(title.crew)
+
+
+```
+
+**title.episode**
+```{r,echo=FALSE}
+title.episode<-read.csv(text = rawToChar(aws.s3::get_object(object = "s3://parganiha.k.imdb/title.episode.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.episode<- title.episode %>% drop_na()
+head(title.episode)
+
+
+
+```
+
+**title.ratings**
+```{r}
+
+title.ratings<-read.csv(text = rawToChar(aws.s3::get_object(object="s3://parganiha.k.imdb/title.ratings.tsv/data.tsv")),sep='\t',na = c("\\N"))
+title.ratings<- title.ratings %>% drop_na()
+
+head(title.ratings)
+
+```
+**Setup SQLIte**
+```{r}
+library(RSQLite)
+con <- dbConnect(RSQLite::SQLite(), "IMDb.db")
+
+dbListTables(con)
+# Disconnect from the database
+# dbDisconnect(con)
+library(dplyr)
+```
+**3. Create and then run CREATE TABLE statements to build the schema. These statements must run from within your notebook and not from a separate script. Ensure proper referential integrity.'**
+**Setting up Database**
+
+
+# Avoiding Foriegn key check
+```{r}  
+
+dbExecute(con, "PRAGMA foreign_keys = OFF;")
+
+dbExecute(con, "CREATE TABLE IF NOT EXISTS Title
+(
+  tconst TEXT NOT NULL,
+  primaryTitle TEXT,
+  originalTitle TEXT,
+  isAdult smallint,
+  startYear INTEGER,
+  endYear INTEGER,
+  Movie_RunTime INTEGER,
+  CONSTRAINT PK_Title PRIMARY KEY (tconst),
+  CONSTRAINT has_ratings FOREIGN KEY (tconst) REFERENCES Ratings (tconst),
+  CONSTRAINT has_episode FOREIGN KEY (tconst) REFERENCES Episodes (tconst)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Ratings
+(
+  tconst TEXT NOT NULL,
+  averageRatings REAL,
+  numVotes INTEGER,
+  CONSTRAINT PK_Ratings PRIMARY KEY (tconst)
+);")
+
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Episodes
+(
+  tconst TEXT NOT NULL,
+  parentTconst TEXT,
+  seasonNumber INTEGER,
+  episodeNumber INTEGER,
+  CONSTRAINT PK_Episodes PRIMARY KEY (tconst)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE type_Ownership
+(
+  Type_Id INTEGER NOT NULL,
+  tconst TEXT NOT NULL,
+  CONSTRAINT has FOREIGN KEY (Type_Id) REFERENCES Type (Type_Id),
+  CONSTRAINT Relationship23 FOREIGN KEY (tconst) REFERENCES Title (tconst)
+);")
+
+
+
+dbExecute(con,
+"CREATE TABLE Type
+(
+  Type_Id INTEGER NOT NULL,
+  titleType TEXT,
+  CONSTRAINT PK_Type PRIMARY KEY (Type_Id)
+);
+
+")
+
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Genre
+(
+  Genre_Id INTEGER NOT NULL,
+  Genre TEXT,
+  CONSTRAINT PK_Genre PRIMARY KEY (Genre_Id)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS genre_Ownership
+(
+  tconst TEXT NOT NULL,
+  Genre_Id INTEGER NOT NULL,
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst),
+  CONSTRAINT has FOREIGN KEY (Genre_Id) REFERENCES Genre (Genre_Id)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Person
+(
+  nconst TEXT NOT NULL,
+  primaryName TEXT,
+  birthYear INTEGER,
+  deathYear INTEGER,
+  age INTEGER,
+  numMovies INTEGER,
+  CONSTRAINT PK_Person PRIMARY KEY (nconst)
+);" )
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Known_For_Titles
+(
+  tconst TEXT NOT NULL,
+  CONSTRAINT PK_Known_For_Titles PRIMARY KEY (tconst),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst)
+);")
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Know_Title_Ownership
+(
+  nconst TEXT NOT NULL,
+  tconst TEXT NOT NULL,
+  CONSTRAINT has FOREIGN KEY (nconst) REFERENCES Person (nconst),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Known_For_Titles (tconst)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Professions
+(
+  Profession_Id INTEGER NOT NULL,
+  Profession_Title TEXT,
+  CONSTRAINT PK_Professions PRIMARY KEY (Profession_Id)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS PrimaryProfession
+(
+  Profession_Id INTEGER NOT NULL,
+  nconst TEXT NOT NULL,
+  CONSTRAINT has_Profession FOREIGN KEY (Profession_Id) REFERENCES Professions (Profession_Id),
+  CONSTRAINT has FOREIGN KEY (nconst) REFERENCES Person (nconst)
+);" )
+
+
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Categories
+(
+  Category_Id INTEGER NOT NULL,
+  Category TEXT,
+  CONSTRAINT PK_Categories PRIMARY KEY (Category_Id)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Principal
+(
+  tconst TEXT NOT NULL,
+  ordering INTEGER NOT NULL,
+  nconst TEXT NOT NULL,
+  Category_Id INTEGER NOT NULL,
+  job TEXT,
+  CONSTRAINT PK_Principal PRIMARY KEY (tconst,ordering),
+  CONSTRAINT has_categories FOREIGN KEY (Category_Id) REFERENCES Categories (Category_Id),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst),
+  CONSTRAINT has FOREIGN KEY (nconst) REFERENCES Person (nconst)
+);")
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Character
+(
+  character_Id INTEGER NOT NULL,
+  character TEXT,
+  CONSTRAINT PK_Character PRIMARY KEY (character_Id)
+);")
+
+
+
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS character_Ownership
+(
+  tconst TEXT NOT NULL,
+  ordering INTEGER NOT NULL,
+  character_Id INTEGER NOT NULL,
+  CONSTRAINT has FOREIGN KEY (tconst, ordering) REFERENCES Principal (tconst, ordering),
+  CONSTRAINT has FOREIGN KEY (character_Id) REFERENCES Character (character_Id)
+);")
+
+
+
+
+
+dbExecute(con,
+"CREATE TABLE Directors
+(
+  Director_Id INTEGER NOT NULL,
+  tconst TEXT NOT NULL,
+  nconst TEXT NOT NULL,
+  CONSTRAINT PK_director_Ownership PRIMARY KEY (Director_Id),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst),
+  CONSTRAINT has FOREIGN KEY (nconst) REFERENCES Person (nconst)
+);")
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Writers
+(
+  Writer_Id INTEGER NOT NULL,
+  tconst TEXT NOT NULL,
+  nconst TEXT NOT NULL,
+  CONSTRAINT PK_Writers PRIMARY KEY (Writer_Id),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst),
+  CONSTRAINT has FOREIGN KEY (nconst) REFERENCES Person (nconst)
+);
+")
+
+
+
+
+
+dbExecute(con,
+"CREATE TABLE IF NOT EXISTS Region
+(
+  region_Id INTEGER NOT NULL,
+  region TEXT,
+  CONSTRAINT PK_Region PRIMARY KEY (region_Id)
+);")
+
+
+dbExecute(con,
+"
+CREATE TABLE IF NOT EXISTS Languages
+(
+  langauge_Id INTEGER NOT NULL,
+  language TEXT NOT NULL,
+  CONSTRAINT PK_Languages PRIMARY KEY (langauge_Id)
+);")
+
+
+dbExecute(con,
+"
+CREATE TABLE IF NOT EXISTS akas
+(
+  tconst TEXT NOT NULL,
+  ordering INTEGER NOT NULL,
+  title TEXT,
+  region_Id INTEGER NOT NULL,
+  language_Id INTEGER NOT NULL,
+  isOriginalTitle smallint,
+  CONSTRAINT PK_akas PRIMARY KEY (tconst,ordering),
+  CONSTRAINT has FOREIGN KEY (tconst) REFERENCES Title (tconst),
+  CONSTRAINT has FOREIGN KEY (region_Id) REFERENCES Region (region_Id),
+  CONSTRAINT has FOREIGN KEY (language_Id) REFERENCES Languages (langauge_Id)
+);")
+
+
+dbExecute(con,
+"
+CREATE TABLE IF NOT EXISTS Types
+(
+  type_Id INTEGER NOT NULL,
+  type TEXT,
+  CONSTRAINT PK_Types PRIMARY KEY (type_Id)
+);")
+
+
+dbExecute(con,
+"
+CREATE TABLE IF NOT EXISTS Attributes
+(
+  Attribute_Id INTEGER NOT NULL,
+  Attribute TEXT,
+  CONSTRAINT PK_Attributes PRIMARY KEY (Attribute_Id)
+);")
+
+
+dbExecute(con,
+          "
+CREATE TABLE Attributes_Ownership
+(
+  tconst TEXT NOT NULL,
+  ordering INTEGER NOT NULL,
+  Attribute_Id INTEGER NOT NULL,
+  CONSTRAINT has FOREIGN KEY (tconst, ordering) REFERENCES akas (tconst, ordering),
+  CONSTRAINT has FOREIGN KEY (Attribute_Id) REFERENCES Attributes (Attribute_Id)
+);") 
+
+```
+
+```{r}
+
+dbExecute(con, "PRAGMA foreign_keys = OFF;")
+dbListTables(con)
+
+``` 
+
+
+**Data Preparation and Manipulation for inserting into Database**
+
+**Title**
+```{r}
+
+#head(title.basics)
+df.title.basics<-title.basics[,-c(2,9)]
+
+
+library(tidyverse)
+
+df.title.basics<- df.title.basics %>% drop_na()
+#map(df.title.basics, ~sum(is.na(.)))
+
+colnames(df.title.basics)<- c("tconst","primaryTitle","originalTitle","isAdult","startYear","endYear" ,"Movie_RunTime")
+
+dbWriteTable(con,"Title",df.title.basics, append=TRUE)
+
+dbGetQuery(con,"select * from Title limit 10")
+```
+
+**Episodes**
+```{r}
+
+
+df.title.episode<-title.episode
+
+df.title.episode<- df.title.episode %>% drop_na()
+
+dbWriteTable(con,"Episodes",df.title.episode, append=TRUE)
+
+dbGetQuery(con,"select * FROM Episodes limit 10")
+```
+
+**Ratings**
+```{r}
+
+
+df.title.ratings<-title.ratings
+
+df.title.ratings<- df.title.ratings %>% drop_na()
+
+colnames(df.title.ratings)<-c("tconst","averageRatings","numVotes")
+
+dbWriteTable(con,"Ratings",df.title.ratings, append=TRUE)
+
+dbGetQuery(con,"select * FROM Ratings limit 10")
+
+
+```
+
+**Writers**
+```{r}
+
+
+df.title.crew<-title.crew
+
+#map(df.title.crew, ~sum(is.na(.)))
+
+df.writers<-df.title.crew[c("tconst", "writers")] %>%
+    mutate(writers = strsplit(as.character(writers), ",")) %>%
+    unnest(writers)
+
+colnames(df.writers)<-c("tconst","nconst")
+
+df.writers<- df.writers %>% drop_na()
+
+df.writers<-tibble::rowid_to_column(df.writers, "Writer_Id")
+
+dbWriteTable(con,"Writers",df.writers, append=TRUE)
+
+
+
+```
+**Directors**
+```{r}
+
+
+df.title.crew<-title.crew
+
+#map(df.title.crew, ~sum(is.na(.)))
+
+df.directors<-df.title.crew[c("tconst", "directors")] %>%
+    mutate(directors = strsplit(as.character(directors), ",")) %>%
+    unnest(directors)
+
+colnames(df.directors)<-c("tconst","nconst")
+
+df.directors<- df.directors %>% drop_na()
+
+df.directors<-tibble::rowid_to_column(df.directors, "Director_Id")
+
+dbWriteTable(con,"Directors",df.directors, append=TRUE)
+
+
+
+```
+
+**Genre**
+```{r}
+
+
+
+df.genre<-title.basics[,c(1,9)]
+
+#map(df.title.crew, ~sum(is.na(.)))
+
+df.genre<-df.genre[c("tconst", "genres")] %>%
+    mutate(genres = strsplit(as.character(genres), ",")) %>%
+    unnest(genres)
+
+
+df.genre<- df.genre %>% drop_na()
+
+Genre<-unique(df.genre$genres)
+
+
+genres<-tibble::rowid_to_column(data.frame(Genre), "Genre_Id")
+
+
+
+
+dbWriteTable(con,"Genre",genres, append=TRUE)
+
+x<-c()
+
+for (i in df.genre$genres) {
+x<-c(x,genres[which(genres$Genre==i),][["Genre_Id"]])    
+}
+
+df.genre$Genre_Id<-x
+
+
+genre_Ownership<-df.genre[,-2]
+
+dbWriteTable(con,"genre_Ownership",genre_Ownership, append=TRUE)
+
+```
+
+**Type**
+```{r}
+
+
+df.type<-title.basics[,c(1,2)]
+
+#map(df.title.crew, ~sum(is.na(.)))
+
+
+library(tidyverse)
+
+df.type<- df.type %>% drop_na()
+
+titleType<-unique(df.type$titleType)
+
+
+titleType<-tibble::rowid_to_column(data.frame(titleType), "Type_Id")
+
+
+
+
+#dbWriteTable(con,"Genre",genres, append=TRUE)
+
+x<-c()
+
+for (i in df.type$titleType) {
+x<-c(x,titleType[which(titleType$titleType==i),][["Type_Id"]])    
+}
+
+df.type$Type_Id<-x
+
+
+dbWriteTable(con,"Type",titleType, append=TRUE)
+
+dbWriteTable(con,"type_Ownership",df.type[,c(1,3)], append=TRUE)
+
+
+
+```
+
+
+
+**Professions**
+```{r}
+
+
+df.Profession<-name.basics[,c(1,5)]
+
+
+
+df.Profession<-df.Profession[c("nconst", "primaryProfession")] %>%
+    mutate(primaryProfession = strsplit(as.character(primaryProfession), ",")) %>%
+    unnest(primaryProfession)
+
+
+df.Profession<- df.Profession %>% drop_na()
+
+primaryProfession<-unique(df.Profession$primaryProfession)
+
+
+df.primaryProfession<-tibble::rowid_to_column(data.frame(primaryProfession), "Profession_Id")
+
+
+
+colnames(df.primaryProfession)<-c("Profession_Id","Profession_Title")
+
+dbWriteTable(con,"Professions",df.primaryProfession, append=TRUE)
+
+x<-c()
+
+for (i in df.Profession$primaryProfession) {
+x<-c(x,df.primaryProfession[which(df.primaryProfession$Profession_Title==i),][["Profession_Id"]])    
+}
+
+df.Profession$Profession_Id<-x
+
+
+genre_Ownership<-df.Profession[,-2]
+
+dbWriteTable(con,"PrimaryProfession",df.Profession[,-2], append=TRUE)
+
+```
+
+**Know for Titles**
+```{r}
+
+
+df.knowntitles<-name.basics[,c(1,6)]
+
+
+
+df.knowntitles<-df.knowntitles[c("nconst", "knownForTitles")] %>%
+    mutate(knownForTitles = strsplit(as.character(knownForTitles), ",")) %>%
+    unnest(knownForTitles)
+
+
+df.knowntitles<- df.knowntitles %>% drop_na()
+
+Known_For_Titles<-unique(df.knowntitles$knownForTitles)
+
+
+
+
+colnames(df.knowntitles)<-c("nconst","tconst")
+
+dbWriteTable(con,"Know_Title_Ownership",df.knowntitles, append=TRUE)
+
+Known_For_Titles<-as.data.frame(Known_For_Titles)
+
+colnames(Known_For_Titles)<-"tconst"
+
+
+dbWriteTable(con,"Know_For_Titles",Known_For_Titles, append=TRUE)
+
+```
+
+
+**Person**
+```{r}
+
+
+#head(title.basics)
+df.name.basics<-name.basics[,c(1:4)]
+
+
+
+library(tidyverse)
+
+df.name.basics<- df.name.basics %>% drop_na()
+
+Current_Year<-as.integer(format(Sys.Date(), "%Y"))
+
+df.name.basics$age<-0
+
+df.name.basics$numMovies<-0
+
+df.name.basics[which(df.name.basics$deathYear!=0),]["age"]=df.name.basics[which(df.name.basics$deathYear!=0),]["deathYear"]-df.name.basics[which(df.name.basics$deathYear!=0),]["birthYear"]
+
+df.name.basics[which(df.name.basics$deathYear==0),]["age"]=Current_Year-df.name.basics[which(df.name.basics$deathYear==0),]["birthYear"]
+
+
+
+dbWriteTable(con,"Person",df.name.basics, append=TRUE)
+
+
+
+
+dbGetQuery(con,"select * from Person limit 10")
+
+
+
+
+```
+
+
+
+**AlsoKnowAsTitle**
+```{r}
+
+
+#head(title.basics)
+df.title.akas<-title.akas[,-c(6:7)]
+
+df.title.akas<- df.title.akas %>% drop_na()
+
+
+
+region<-unique(df.title.akas$region)
+
+
+df.region_Id<-tibble::rowid_to_column(data.frame(region), "region_Id")
+
+
+
+#dbWriteTable(con,"Professions",df.primaryProfession, append=TRUE)
+
+x<-c()
+
+for (i in df.title.akas$region) {
+x<-c(x,df.region_Id[which(df.region_Id$region==i),][["region_Id"]])    
+}
+
+df.title.akas$region_Id<-x
+
+
+
+  
+langauge<-unique(df.title.akas$language)
+
+
+df.language_Id<-tibble::rowid_to_column(data.frame(langauge), "language_Id")
+
+
+y<-c()
+
+for (i in df.title.akas$language) {
+y<-c(y,df.language_Id[which(df.language_Id$langauge==i),][["language_Id"]])    
+}
+
+df.title.akas$language_Id<-y
+
+df.title.akas$region<-df.title.akas$region_Id
+
+df.title.akas$language<-df.title.akas$language_Id
+
+df.title.akas<-df.title.akas[,-c(7:8)]
+
+colnames(df.title.akas)<-c("tconst","ordering","title","region_Id","language_Id","isOriginalTitle" )
+
+
+dbWriteTable(con,"akas",df.title.akas, append=TRUE)
+
+```
+
+**Attributes**
+```{r}
+
+
+#head(title.basics)
+df.attributes<-title.akas[,c(1,2,7)]
+
+df.attributes<- df.attributes %>% drop_na()
+
+Attribute<-unique(df.attributes$attributes)
+
+
+df.Attribute_Id<-tibble::rowid_to_column(data.frame(Attribute), "Attribute_Id")
+
+
+#dbWriteTable(con,"Professions",df.primaryProfession, append=TRUE)
+
+x<-c()
+
+for (i in df.attributes$attributes) {
+x<-c(x,df.Attribute_Id[which(df.Attribute_Id$Attribute==i),][["Attribute_Id"]])    
+}
+
+
+df.attributes$Attribue_Id<-x
+
+colnames(df.attributes)<-c("tconst","ordering","Attribute","Attribue_Id")
+
+dbWriteTable(con,"Attribute_Ownership",df.attributes[,-3], append=TRUE)
+
+dbWriteTable(con,"Attribute",df.attributes[,c(4,3)], append=TRUE)
+
+```
+
+**Principals**
+```{r}
+
+
+#head(title.basics)
+df.principal<-title.principals[,-6]
+
+df.principal<- df.principal %>% drop_na()
+
+category<-unique(df.principal$category)
+
+
+df.Category_Id<-tibble::rowid_to_column(data.frame(category), "Category_Id")
+
+
+#dbWriteTable(con,"Professions",df.primaryProfession, append=TRUE)
+
+x<-c()
+
+for (i in df.principal$category) {
+x<-c(x,df.Category_Id[which(df.Category_Id$category==i),][["Category_Id"]])    
+}
+
+
+df.principal$Category_Id<-x
+
+
+df.principal$category<-NULL
+
+df.principal<-df.principal[,c(1,2,3,5,4)]
+
+
+dbWriteTable(con,"Principal",df.principal, append=TRUE)
+
+
+dbWriteTable(con,"Categories",df.Category_Id, append=TRUE)
+
+```
+
+**Characters**
+```{r}
+
+library(stringr)
+#head(title.basics)
+df.characters<-title.principals[,c(1,2,6)]
+
+df.characters<- df.characters %>% drop_na()
+
+df.characters$characters<-gsub("\\[|\\]", "", df.characters$characters)
+
+
+df.characters<-df.characters %>%
+    mutate(characters = strsplit(as.character(characters), ",")) %>%
+    unnest(characters)
+
+df.characters$characters <- str_remove_all(df.characters$characters, "[^0-9A-Za-z///' ]")
+
+characters<-unique(df.characters$characters)
+
+
+df.character_Id<-tibble::rowid_to_column(data.frame(characters), "Character_Id")
+
+
+
+
+x<-c()
+
+for (i in df.characters$characters) {
+x<-c(x,df.character_Id[which(df.character_Id$characters==i),][["Character_Id"]])    
+}
+
+
+df.characters$Character_Id<-x
+
+
+#dbWriteTable(con,"character_Ownership",df.characters[,c(1,2,4)], append=TRUE)
+
+colnames(df.character_Id)<-c("character_Id","character")
+
+#dbWriteTable(con,"Character",df.character_Id, append=TRUE)
+
+
+
+```
+
+**5. After loading the data, execute UPDATE statements for the two newly created columns in (2C). You may interpret what appearing in movies means and what you classify as movies -- just make it clear in your notebook.**
+```{r}
+gc()
+
+dbExecute(con,"BEGIN TRANSACTION;")
+dbExecute(con,"UPDATE Person SET age=(select strftime('%Y','now'))-birthYear where deathYear in (select deathYear from Person where deathYear is  0)")
+dbExecute(con,"UPDATE Person SET age=deathYear-birthYear where deathYear in (select deathYear from Person where deathYear is not 0)")
+
+dbExecute(con,"UPDATE Person SET numMovies=(select count(*) from Person Pr inner join PrimaryProfession PP on Pr.nconst=PP.nconst inner join Professions Pf on PP.Profession_Id=Pf.Profession_Id inner join Know_Title_Ownership K on K.nconst=Pr.nconst  where Pf.Profession_Title = 'actor' or Pf.Profession_Title = 'actress' group by K.nconst)")
+
+dbExecute(con,"COMMIT;")
+
+```
+**6. Add triggers to the appropriate tables so that the newly created columns in (2C) are automatically updated when new data in inserted.**
+```{r}
+
+dbExecute(con,"drop trigger if exists Age")
+dbExecute(con,"drop trigger if exists numMovies")
+
+dbExecute(con,"CREATE TRIGGER Age after insert  on  Person
+ BEGIN
+update  Person  set age = (deathYear-birthYear) where nconst=new.nconst and deathYear!=0 ;
+update  Person  set age = (select strftime('%Y','now')-birthYear) where nconst=new.nconst and deathYear=0;
+END;")
+
+
+dbExecute(con,"CREATE TRIGGER numMovies after insert on Know_Title_Ownership
+ BEGIN
+update  Person  set numMovies = (select numMovies from Person where nconst=new.nconst) + (select count(distinct(new.tconst)) from Know_Title_Ownership group by nconst) where nconst=new.nconst;
+END;")
+
+
+
+
+
+
+## Update Statement
+dbExecute(con,"BEGIN TRANSACTION;")
+
+dbExecute(con,"INSERT INTO Person  VALUES('nm9999991','Kanishka Parganiha',1954,2013,0,0);")
+dbExecute(con,"INSERT INTO Person  VALUES('nm9999992','Him Sampat',1984,0,0,0);")
+dbExecute(con,"INSERT INTO Know_Title_Ownership  VALUES('nm9999992','tt0299658');")
+dbExecute(con,"INSERT INTO Know_Title_Ownership  VALUES('nm9999991','tt9999999');")
+dbExecute(con,"INSERT INTO Know_Title_Ownership  VALUES('nm9999992','tt0299699');")
+dbExecute(con,"INSERT INTO Know_Title_Ownership  VALUES('nm9999991','tt4999999');")
+dbExecute(con,"INSERT INTO Know_Title_Ownership  VALUES('nm9999991','tt5999999');")
+
+
+dbExecute(con,"COMMIT;")
+
+
+dbGetQuery(con,"select * from Person where nconst > 'nm9999990'  ")
+
+
+dbGetQuery(con,"select * from Know_Title_Ownership where nconst > 'nm9999990'  ")
+
+
+```
+
+**7. Create a view that lists the name of each actor or actress, their age, whether they are dead or not, and how many movies they are known for based on what is stored for each actor or actress. If you work with a data sample it does not matter if the movie is actually in the database.**
+
+```{r}
+gc()
+
+dbExecute(con,"drop view if exists Actor;")
+
+dbExecute(con,"CREATE VIEW Actor as select Pr.nconst,Pr.primaryName,Pf.Profession_Title,Pr.age,Pr.numMovies from Person Pr inner join PrimaryProfession PP on Pr.nconst=PP.nconst inner join Professions Pf on PP.Profession_Id=Pf.Profession_Id inner join Know_Title_Ownership K on K.nconst=Pr.nconst  where Pf.Profession_Title = 'actor' or Pf.Profession_Title = 'actress' group by K.nconst")
+
+dbGetQuery(con,'select * from Actor limit 5')
+```
+**8. Write a query that finds the number of seasons for each TV series. Using the results of the query create a histogram (frequency plot) with proper axis labels and title.**
+```{r}
+gc()
+
+SeasonCountNew<-dbGetQuery(con,"select T.primaryTitle,count(distinct(E.seasonNumber)) as TotalSeason  from Episodes E inner join Title T on E.parentTconst=T.tconst group by E.parentTconst")
+
+head(SeasonCountNew)
+
+library(ggplot2)
+ggplot(SeasonCountNew[1:50,], aes(x=reorder(primaryTitle,-TotalSeason), y=TotalSeason,fill = primaryTitle))+ geom_bar(stat = "identity")+theme(axis.text.x = element_text(angle = 90, hjust =1,vjust = 0.5))+geom_text(aes(label = TotalSeason),angle = 0, hjust=0.6,vjust=-0.5)+theme(legend.position = "none")
+```
+
+**9. Build a function in your code or a stored procedure in the database (approach is your choice) called addActor() that adds a new actor to the database: this requires updating several tables, so the insertions must occur within a transaction in order to function properly in a concurrent environment. Test your function by inserting a new actor -- you may make up a name and associated information. Show evidence  in your notebook that the actor was properly inserted.**
+```{r}
+
+gc()
+
+newnconst <- "nm9999993"
+newprimaryName <- "Nandan Chaudhari"
+newbirthYear <- as.integer(1993)
+newdeathYear <- as.integer(0)
+Id<-c("'tt0443489'","'tt044348d'" ,"'tt0443486'")
+
+options(useFancyQuotes = FALSE)
+
+
+ addActor<-function(newnconst,newprimaryName,newbirthYear,newdeathYear,Id)
+   {
+   
+   dbExecute(con,"BEGIN TRANSACTION;")
+   dbExecute(con,paste("INSERT INTO Person VALUES(",sQuote(newnconst),",",sQuote(newprimaryName),",",newbirthYear,",",
+                            newdeathYear,",","0",",","0",");",sep=''))
+   for(i in Id){dbExecute(con,paste("INSERT INTO  Know_Title_Ownership VALUES(",sQuote(newnconst),",",i,");"))}
+   dbExecute(con,paste("INSERT INTO PrimaryProfession VALUES(",sQuote(newnconst),",",' 1',");"))
+   dbExecute(con,"COMMIT;")
+   
+   }
+
+
+#dbExecute(con,"rollback;")
+
+addActor(newnconst,newprimaryName,newbirthYear,newdeathYear,Id)
+
+dbGetQuery(con,"select * from Person where nconst > 'nm9999990'  ")
+
+
+dbGetQuery(con,"select * from Know_Title_Ownership where nconst > 'nm9999990'  ")
+
+
+```
+
+**10. Build a function in your code or a stored procedure in the database (approach is your choice) called deleteActor() that removes an actor from the database: this requires updating several tables, so the deletions must occur within a transaction in order to function properly in a concurrent environment. Test your function by deleting a new actor inserted in (9) -- show evidence that the removal was successful.**
+```{r}
+gc()
+
+ deleteActor<-function(newnconst)
+   {
+   
+   dbExecute(con,"BEGIN TRANSACTION;")
+   dbExecute(con,paste("DELETE FROM Person where nconst=",sQuote(newnconst),sep=''))
+   dbExecute(con,paste("DELETE FROM Know_Title_Ownership where nconst=",sQuote(newnconst),sep=''))
+   dbExecute(con,paste("DELETE FROM PrimaryProfession where nconst=",sQuote(newnconst),sep=''))
+   dbExecute(con,"COMMIT;")
+   
+   }
+
+deleteActor('nm9999993')
+deleteActor('nm9999991')
+deleteActor('nm9999992')
+
+dbGetQuery(con,"select * from Person where nconst > 'nm9999990'  ")
+
+
+dbGetQuery(con,"select * from Know_Title_Ownership where nconst > 'nm9999990'  ")
+
+```
+**11.Write a query to retrieve the names and ages of all actors who appeared in more than two movies (but not TV Movies) which an above average rating. Show the results of the query in your notebook. Do not hard code the average rating. If you did not load the title.principals.tsv file then you can use the knownFor field in the names.basic.tsv file -- or the provided samples.**
+```{r}
+
+
+gc()
+
+dbGetQuery(con,"select distinct Pr.primaryName,Pr.age,Pr.numMovies from Person Pr 
+                 inner join PrimaryProfession PP on Pr.nconst=PP.nconst 
+                 inner join Professions Pf on PP.Profession_Id=Pf.Profession_Id 
+                 inner join Know_Title_Ownership K on K.nconst=Pr.nconst  
+                    where Pf.Profession_Title = 'actor' or Pf.Profession_Title = 'actress' and Pr.numMovies>2 
+                        and  K.tconst in (select tconst from Ratings  where averageRatings > (select avg(averageRatings) from Ratings)) 
+                            and tconst in (select O.tconst from Type T inner join type_Ownership O on T.Type_Id=O.Type_Id where T.titleType='movie' )limit 5")
+
+```
+
+**12. Write a query that finds an actor by name (pick a name). Measure the execution time of the query. Then create an index that would improve the performance of the query and then run and measure it again. Show the difference in a bar chart and comment on why that's the case.**
+```{r}
+gc()
+
+dbExecute(con,"DROP index if exists NEW_INDEX")
+
+start_time_1 <- Sys.time()
+
+dbGetQuery(con,"select * from Person where primaryName='Albert Minns' ")
+
+end_time_1 <- Sys.time()
+
+p<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+
+
+##Creating Index
+dbExecute(con,"CREATE INDEX NEW_INDEX ON Person(LENGTH(nconst)); ")
+
+start_time_2 <- Sys.time()
+
+dbGetQuery(con,"select * from Person where primaryName='Albert Minns' ")
+
+end_time_2 <- Sys.time()
+
+q<-round(difftime(end_time_2, start_time_2, units = "sec"),2)
+
+
+
+##Display
+library(ggplot2)
+data <- data.frame(
+    name=c("Without Index","With Index") ,  
+    ExecutionTime=c(p,q)
+)
+
+
+# Barplot
+
+ggplot(data, aes(x=name, y=ExecutionTime,fill=name)) + 
+    geom_bar(stat = "identity", width=0.2) +theme_minimal()
+
+#To delete a row
+#dbExecute(con,"DROP index NEW_INDEX") ; 
+
+```
+When we create an index for a column in SQLite, then it maintains an ordered list of the data within the index’s columns as well as their records’ primary key values. SQLite uses these indexes to perform a binary search on the title values to  row value = Charli Thweatt.
+
+
+**13. Add several indexes to a table of your choice (one containing lots of rows) and then insert additional rows into the table. Provide measurements of insert performance with no additional index, one, two, three, etc. Plot the performance change in a line graph and comment on the difference.**
+```{r}
+gc()
+
+dbExecute(con,"CREATE INDEX NEWINDEX ON Episodes(LENGTH(tconst)); ")
+
+start_time_1 <- Sys.time()
+
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111111','tt0048844',1,1); ")
+
+end_time_1 <- Sys.time()
+
+p1<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+start_time_1 <- Sys.time()
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111112','tt0048844',1,2); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111113','tt0048844',1,5); ")
+
+end_time_1 <- Sys.time()
+
+p2<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+start_time_1 <- Sys.time()
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111114','tt0048844',1,2); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111115','tt0048844',1,5); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111116','tt0048844',1,5); ")
+
+end_time_1 <- Sys.time()
+
+p3<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+
+
+
+
+
+dbExecute(con,"drop INDEX NEWINDEX; ")
+
+
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111111'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111112'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111113'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111114';  ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111115';  ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111116';  ")
+
+
+
+
+
+start_time_1 <- Sys.time()
+
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111111','tt0048844',1,1); ")
+
+end_time_1 <- Sys.time()
+
+q1<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+start_time_1 <- Sys.time()
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111112','tt0048844',1,2); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111113','tt0048844',1,5); ")
+
+end_time_1 <- Sys.time()
+
+q2<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+start_time_1 <- Sys.time()
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111114','tt0048844',1,2); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111115','tt0048844',1,5); ")
+
+dbExecute(con,"INSERT INTO Episodes  VALUES('tt1111116','tt0048844',1,5); ")
+
+end_time_1 <- Sys.time()
+
+q3<-round(difftime(end_time_1, start_time_1, units = "sec"),2)
+
+
+
+
+
+
+
+
+
+##Display
+data <- data.frame(InsertionCount=c(1,2,3),
+    With.Index=as.numeric(c(p1,p2,p3)) ,  
+    Without.Index=as.numeric(c(q1,q2,q3))
+)
+
+# LinePLot
+library(reshape2)
+test_data<-melt(data, id="InsertionCount")
+colnames(test_data)<-c("InsertionCount","variable","ExecutionTime")
+ggplot(data=test_data,aes(x=InsertionCount, y=ExecutionTime, colour=variable)) + geom_line()+ggtitle("Comparison of Execution Time")
+
+
+
+
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111111'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111112'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111113'; ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111114';  ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111115';  ")
+
+dbExecute(con,"delete from Episodes  where tconst='tt1111116';  ")
+
+
+
+
+
+#dbGetQuery(con,"select * from Episodes where parentTconst='tt0048844' ")
+
+
+```
+When we insert records in your indexed tables, each of the insertion operations will take slightly longer when there are indexes on the table than when there are no indexes. This is due to the presence of indexes on the table as, during insertion operation, the database must make sure the new entry is also found via these indexes. For this reason, it has to add the new entry to each and every index on that table. The number of indexes is therefore a multiplier for the cost of an insert statement.
+

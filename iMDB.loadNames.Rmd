@@ -1,0 +1,193 @@
+---
+title: "IMDB Load name.basics.tsv.gz Data Set"
+output: html_notebook
+---
+
+
+```{r}
+
+#set this to the folder in which the file is located
+#path <- "c:/Users/Martin/Downloads/imdb"
+#path <- "c:/Users/mjs01/Downloads/imdb"
+path <- "/Users/mschedlb/Downloads/imdb"
+
+```
+
+
+## Load a sample from 'name.basics.tsv'
+
+This file contains actors, actresses, and others with their names and their roles
+plus titles (movies, shows) they are "known for". 
+
+Roles and knownFor are multi-valued string fields. Builds a second file
+that maps one name to one knownFor title (nm,tt) to facilitate joins later.
+
+The algorithm is to load the entire file:
+
+* Updates the file and eliminates \\N values to empty fields.
+* Changes actress to actor.
+* changes PK values from text (nm... and tt...) to integers as they will
+  consume less storage in the database and are often faster; will also
+  speed up other sampling tasks for other data files
+
+nconst (nm...) is PK
+knownForTitles (tt...) is FK
+
+```{r}
+start_time <- Sys.time()
+
+fn <- "name.basics.tsv.gz"
+new.fn <- "name.basics.sample.tsv"
+new.fn.kf <- "name.basics.kf.sample.tsv"
+
+maxLines <- -1
+sampleSize <- 5000
+
+start_time_read <- Sys.time()
+
+df.names.all <- read.csv(file = paste(path,fn,sep="/"), 
+                         sep = '\t', 
+                         header = TRUE, 
+                         stringsAsFactors = FALSE,
+                         nrows = maxLines)
+
+n.all <- nrow(df.names.all)
+
+end_time_read <- Sys.time()
+print(paste0("Time to read file: '",
+             round(difftime(end_time_read,
+                            start_time_read,
+                            units = "secs"),2), " sec",
+             ' | ', n.all, ' lines read'))
+
+
+# analysis of file
+
+# only retain names for which there's a birthyear
+df.names.all.bY <- df.names.all[which(df.names.all$birthYear != "\\N"),]
+
+# only look at those names who contain any actor/actress role
+# add column isActor to TRUE
+a <- grepl( 'actor', df.names.all.bY[,5], fixed = TRUE) | 
+  grepl( 'actress', df.names.all.bY[,5], fixed = TRUE)
+df.names.all.bY$isActor[a] <- TRUE
+df.names.actors <- df.names.all.bY[a,]
+
+
+# sample actor data
+set.seed(55776)
+s <- round(runif(sampleSize, min = 1, max = (nrow(df.names.actors))),0)
+df.names.sample <- df.names.actors[s,]
+
+# clean data
+
+# which() is much faster than a for loop
+
+# eliminate NA and \\N values from fields
+nas <- which(is.na(df.names.sample[,3]) | df.names.sample[,3] == "\\N")
+df.names.sample[nas,3] <- 0
+df.names.sample[,3] <- as.numeric(df.names.sample[,3])
+
+nas <- which(is.na(df.names.sample[,4]) | df.names.sample[,4] == "\\N")
+df.names.sample[nas,4] <- 0
+df.names.sample[,4] <- as.numeric(df.names.sample[,4])
+
+nas <- which(is.na(df.names.sample[,5]) | df.names.sample[,5] == "\\N")
+df.names.sample[nas,5] <- ''
+
+nas <- which(is.na(df.names.sample[,6]) | df.names.sample[,6] == "\\N")
+df.names.sample[nas,6] <- ''
+
+# add a column for PK that is numeric to reduce storage in a table
+df.names.sample$nconstPK <- as.numeric(substr(df.names.sample[,1], 3, 99))
+
+# save each nm plus one tt per line; the original tt's for knownFor remain
+# in the file as a comma-separated field
+
+n.sample <- nrow(df.names.sample)
+print (paste("Total number of retained names: ", n.sample))
+
+# clear memory and then garbage collect except for df.names.sample
+rm(df.names.actors, df.names.all, df.names.all.bY, df.names.raw)
+gc()
+
+# splot all tts in knownFor column into list of vectors of chr
+titles <- strsplit(df.names.sample[,6], ",")
+
+# garbage collect memory
+gc(verbose = F)
+
+start_time_loop <- Sys.time()
+
+# vectors are much faster than data frames; pre-allocate memory
+v.nm <- vector(mode = "character", length = n.sample)
+v.tt <- vector(mode = "character", length = n.sample)
+
+k <- 1
+
+for (i in 1:n.sample)
+{
+  if ((i %% 10000) == 0) {
+    print(paste("Iteration:",i,"started..."))
+  }
+  
+  # write each nm and tt pair to a row
+  tt <- titles[[i]]
+  l <- length(tt)
+  if (l > 0)
+  {
+    for (j in 1:l)
+    {
+      # adding/writing to vector is much faster than dataframe
+      v.nm[k] <- df.names.sample[i,1]
+      v.tt[k] <- tt[j]
+      
+      k <- k + 1
+    }
+  } 
+}
+
+end_time_loop <- Sys.time()
+totTm <- difftime(end_time_loop, start_time_loop, units = "secs")
+print(paste0('Time to process ', s,' samples: ', 
+             round(totTm, 2), " sec"))
+
+
+
+# write sampled data to new TSV
+write.table(df.names.sample, file = paste(path,new.fn,sep="/"), 
+          col.names = TRUE, sep = '\t', row.names = F)
+
+# write the PK/FK file with PKs and FKs as numbers
+df.nm.tt <- data.frame(as.numeric(substr(v.nm, 3, 99)),
+                       as.numeric(substr(v.tt, 3, 99)))
+
+write.table(df.nm.tt, file = paste(path,new.fn.kf,sep="/"), 
+          sep = '\t', row.names = F,
+          col.names = c("nconst","tconst"))
+
+end_time <- Sys.time()
+print(paste0('Time: ', round(difftime(end_time, start_time, units = "secs"),2), " sec"))
+
+```
+
+## Read sampled name.basics.sample file
+
+```{r}
+start_time <- Sys.time()
+
+new.fn <- "name.basics.sample.tsv" 
+
+df.names <- read.csv(file = paste(path,new.fn,sep="/"), 
+                     sep = '\t', 
+                     header = TRUE, 
+                     stringsAsFactors = FALSE)
+
+end_time <- Sys.time()
+print(paste0('Time: ', round(difftime(end_time, start_time, units = "secs"),2), " sec"))
+
+# ensure that data was read
+head(df.names)
+tail(df.names)
+
+```
